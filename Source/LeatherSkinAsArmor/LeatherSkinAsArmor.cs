@@ -50,7 +50,7 @@ namespace CF_LeatherSkinAsArmor
 
     public class Settings : ModSettings
     {
-        public float StuffEffectMultiplierArmor;
+        public float StuffEffectMultiplierArmor = 0.2f;
         public override void ExposeData()
         {
             Scribe_Values.Look(ref StuffEffectMultiplierArmor, "StuffEffectMultiplierArmor", 0.2f);
