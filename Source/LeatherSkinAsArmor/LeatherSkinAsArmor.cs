@@ -1,23 +1,20 @@
 ﻿#nullable enable
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 
 using RimWorld;
 using Verse;
 using HarmonyLib;
 using UnityEngine;
-using System.Reflection;
+
 
 namespace CF_LeatherSkinAsArmor
 {
     public class Patcher : Mod
     {
         public static Settings Settings = new();
-        string stuffEffectMultiplierArmorBuffer;
+        string? stuffEffectMultiplierArmorBuffer;
 
         public Patcher(ModContentPack pack) : base(pack)
         {
@@ -37,6 +34,7 @@ namespace CF_LeatherSkinAsArmor
                 var rect = list.Label(StatDefOf.StuffEffectMultiplierArmor.label, tooltip: "Animals gain additional armor (innermost) through the leather they produce");
                 Widgets.TextFieldNumeric(rect.RightPartPixels(50), ref Settings.StuffEffectMultiplierArmor, ref stuffEffectMultiplierArmorBuffer, 0, 2);
             }
+            list.CheckboxLabeled("Apply to humanlike", ref Settings.ApplyToHumanlike, "Allow humanlike to gain armor too");
             list.End();
             base.DoSettingsWindowContents(inRect);
         }
@@ -51,30 +49,59 @@ namespace CF_LeatherSkinAsArmor
     public class Settings : ModSettings
     {
         public float StuffEffectMultiplierArmor = 0.2f;
+        public bool ApplyToHumanlike = true;
         public override void ExposeData()
         {
-            Scribe_Values.Look(ref StuffEffectMultiplierArmor, "StuffEffectMultiplierArmor", 0.2f);
+            Scribe_Values.Look(ref StuffEffectMultiplierArmor, nameof(StuffEffectMultiplierArmor), 0.2f);
+            Scribe_Values.Look(ref ApplyToHumanlike, nameof(ApplyToHumanlike), true);
             base.ExposeData();
         }
     }
 
 
+    [StaticConstructorOnStartup]
+    public static class InitUtility
+    {
+        static InitUtility()
+        {
+            AddStatpart(StatDefOf.ArmorRating_Sharp);
+            AddStatpart(StatDefOf.ArmorRating_Blunt);
+            AddStatpart(StatDefOf.ArmorRating_Heat);
+        }
+        public static void AddStatpart(StatDef stat)
+        {
+            var stuffStatPart = stat.GetStatPart<StatPart_Stuff>();
+            _ = stuffStatPart?.stuffPowerStat ?? throw new ArgumentException($"Missing StatPart_Stuff.stuffPowerStat in {stat}");
+            stat.parts.Add(new StatPart_AnimalArmor() { stuffPowerStat = stuffStatPart.stuffPowerStat });
+        }
+
+    }
+
     public class StatPart_AnimalArmor: StatPart
     {
         public StatDef? stuffPowerStat;
-        public float multiplier;
 
         public override void TransformValue(StatRequest req, ref float val)
         {
+            var multiplier = Patcher.Settings.StuffEffectMultiplierArmor;
             if (req.Thing is Pawn pawn && pawn.RaceProps.leatherDef is {} leatherDef)
             {
+                if (pawn.RaceProps.Humanlike && !Patcher.Settings.ApplyToHumanlike)
+                {
+                    return;
+                }
                 val += leatherDef.GetStatValueAbstract(stuffPowerStat) * multiplier;
             }
         }
         public override string? ExplanationPart(StatRequest req)
         {
+            var multiplier = Patcher.Settings.StuffEffectMultiplierArmor;
             if (req.Thing is Pawn pawn && pawn.RaceProps.leatherDef is {} leatherDef)
             {
+                if (pawn.RaceProps.Humanlike && !Patcher.Settings.ApplyToHumanlike)
+                {
+                    return null;
+                }
                 var stuffStat = leatherDef.GetStatValueAbstract(stuffPowerStat);
                 if (stuffStat == 0 || multiplier == 0) {
                     return null;
@@ -91,25 +118,5 @@ namespace CF_LeatherSkinAsArmor
     }
 
 
-    [HarmonyPatch(typeof(DefGenerator))]
-    [HarmonyPatch(nameof(DefGenerator.GenerateImpliedDefs_PreResolve))]
-    public static class Patch_DefGenerator_GenerateImpliedDefs_PreResolve
-    {
-        public static void AddStatpart(StatDef stat)
-        {
-            var stuffStatPart = stat.GetStatPart<StatPart_Stuff>();
-            _ = stuffStatPart?.stuffPowerStat ?? throw new ArgumentException($"Missing StatPart_Stuff.stuffPowerStat in {stat}");
-            stat.parts.Add(new StatPart_AnimalArmor() {
-                stuffPowerStat = stuffStatPart.stuffPowerStat, multiplier = Patcher.Settings.StuffEffectMultiplierArmor
-            });
-        }
-
-        public static void Postfix()
-        {
-            AddStatpart(StatDefOf.ArmorRating_Sharp);
-            AddStatpart(StatDefOf.ArmorRating_Blunt);
-            AddStatpart(StatDefOf.ArmorRating_Heat);
-        }
-    }
 
 }
